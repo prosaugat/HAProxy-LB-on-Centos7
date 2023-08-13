@@ -1,0 +1,156 @@
+Of course! Let's go through the configuration again with detailed explanations of the variables:
+
+**Lab Environment Setup:**
+
+1. **Operating System:** CentOS 7
+2. **IP Addresses:**
+   - HAProxy/Keepalived Server: 192.168.1.10
+   - Backend Server 1: 192.168.1.11
+   - Backend Server 2: 192.168.1.12
+   - Virtual IP (VIP): 192.168.1.100
+
+**Step 1: Install Required Packages**
+
+Install the necessary packages on each server:
+
+```bash
+# On HAProxy/Keepalived Server
+sudo yum install haproxy keepalived -y
+
+# On Backend Servers (both)
+sudo yum install httpd -y
+sudo systemctl enable httpd
+sudo systemctl start httpd
+```
+
+**Step 2: Configure HAProxy**
+
+1. Edit the HAProxy configuration file:
+
+```bash
+sudo nano /etc/haproxy/haproxy.cfg
+```
+
+2. Configure HAProxy to balance traffic between backend servers:
+
+```plaintext
+global
+    # Logging settings
+    log /dev/log local0
+    log /dev/log local1 notice
+    chroot /var/lib/haproxy
+
+    # Admin socket for stats
+    stats socket /run/haproxy/admin.sock mode 660 level admin
+    stats timeout 30s
+
+    # User and group settings
+    user haproxy
+    group haproxy
+    daemon
+
+defaults
+    log global
+    mode http
+    option httplog
+    option dontlognull
+    timeout connect 5000
+    timeout client 50000
+    timeout server 50000
+
+frontend http_front
+    bind *:80
+    default_backend http_back
+
+backend http_back
+    balance roundrobin
+    server backend1 192.168.1.11:80 check
+    server backend2 192.168.1.12:80 check
+```
+
+- `global`: Global configuration settings for HAProxy.
+
+- `defaults`: Default settings for frontend and backend sections.
+
+- `frontend http_front`: Defines the frontend section for incoming HTTP requests.
+
+- `bind *:80`: Binds the frontend to listen on all available IP addresses on port 80.
+
+- `default_backend http_back`: Routes incoming requests to the backend named `http_back` if no other rules match.
+
+- `backend http_back`: Defines the backend section for handling requests.
+
+- `balance roundrobin`: Specifies the round-robin load balancing algorithm.
+
+- `server backend1 192.168.1.11:80 check`: Configures backend server 1 with its IP address and port, and performs health checks.
+
+- `server backend2 192.168.1.12:80 check`: Configures backend server 2 similarly.
+
+**Step 3: Configure Keepalived**
+
+1. Edit the Keepalived configuration file:
+
+```bash
+sudo nano /etc/keepalived/keepalived.conf
+```
+
+2. Configure Keepalived for Virtual IP failover:
+
+```plaintext
+global_defs {
+    router_id LVS_DEVEL
+}
+
+vrrp_instance VI_1 {
+    state MASTER
+    interface eth0
+    virtual_router_id 51
+    priority 101  # Use 100 for BACKUP server
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass YOUR_AUTH_PASSWORD
+    }
+    virtual_ipaddress {
+        192.168.1.100
+    }
+}
+```
+
+- `global_defs`: Global definitions for Keepalived.
+
+- `vrrp_instance VI_1`: Configuration for the VRRP instance.
+
+- `state MASTER`: Sets this Keepalived server as the MASTER. Use `state BACKUP` for the backup server.
+
+- `interface eth0`: Specifies the network interface to use.
+
+- `virtual_router_id 51`: Unique ID for the VRRP instance.
+
+- `priority 101`: Priority of this server as the MASTER. Use a lower value (e.g., 100) for the BACKUP server.
+
+- `advert_int 1`: Advertisement interval in seconds.
+
+- `authentication`: Authentication settings for VRRP communication.
+
+- `virtual_ipaddress`: Specifies the virtual IP address.
+
+Replace `YOUR_AUTH_PASSWORD` with your chosen authentication password.
+
+**Step 4: Start Services**
+
+```bash
+# On HAProxy/Keepalived Server
+sudo systemctl enable haproxy
+sudo systemctl start haproxy
+sudo systemctl enable keepalived
+sudo systemctl start keepalived
+```
+
+**Step 5: Test the Setup**
+
+1. Open a web browser and access the virtual IP address: http://192.168.1.100
+2. Verify that the traffic is being load balanced between the backend servers.
+3. Perform a failover test by stopping HAProxy on the MASTER server. The BACKUP server should take over the virtual IP address.
+
+Congratulations! You have successfully set up HAProxy with Keepalived in your lab environment, including the configuration of a Virtual IP (VIP) for high availability and load balancing.
